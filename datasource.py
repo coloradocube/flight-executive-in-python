@@ -53,7 +53,11 @@ class DataSource:
     
     def check(self):
         # for pre-flight check
-        pass
+        try:
+            self.poll()
+            return 0
+        catch Exception:
+            return -1
 
 
 
