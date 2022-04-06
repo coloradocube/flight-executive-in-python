@@ -56,7 +56,7 @@ class DataSource:
         try:
             self.poll()
             return 0
-        catch Exception:
+        except:
             return -1
 
 
