@@ -50,6 +50,9 @@ class DataSource:
         except:
             return -1
     
+    def close_file(self):
+        self.output_file.close()
+    
     @staticmethod
     def pack(format_, sensor_output, decimal_place_multiplier):
         

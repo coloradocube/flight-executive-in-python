@@ -2,11 +2,15 @@ import multiprocessing as mp
 import time
 from queue import Empty
 import utils
+import datasources
 from datasources import GNSS, TMP117
 import serial
 import io
 import sys
 import struct
+from adafruit_rockblock import RockBlock
+import serial.tools.list_ports
+import packing
 
 
 def datasource_loop(ds, q, shutdown_q):
@@ -21,15 +25,14 @@ def datasource_loop(ds, q, shutdown_q):
             
             ds.log(current_timestamp, current_data)
             
-            # Update the queue
-            #if not q.empty():
-            #    q.get()
             msg = (ds.name, (current_timestamp,) + current_data)
             
             q.put(msg)
             
             # to reduce unnecessary battery usage
             time.sleep(0.01)
+        
+    ds.close_file()
 
 def tmp117(q, shutdown_q, name):
     
@@ -50,7 +53,7 @@ def gnss(q, shutdown_q, name):
     datasource_loop(ds, q, shutdown_q)
 
 
-def create_process(data_qs, shutdown_q, ps, f, name):
+def create_sensor_process(data_qs, shutdown_q, ps, f, name):
     
     # Defaults for mp.Queue: FIFO, infinite capacity
     q = mp.Queue()
@@ -59,6 +62,35 @@ def create_process(data_qs, shutdown_q, ps, f, name):
     p = mp.Process(target=f, args=(q, shutdown_q, name))
     p.start()
     ps.append(p)
+
+
+def init_rockblock():
+    
+    # Get correct port
+    port = None
+    for p in serial.tools.list_ports.comports():
+        if p.product == 'TTL232R-3V3':
+            port = p.device
+    
+    uart = serial.Serial(port, 19200)
+    rb = RockBlock(uart)
+    
+    return rb
+
+
+def rockblock_send(rb, packed_data):
+    
+    rb.data_out = packed_data
+    print("Talking to satellite...")
+    retry = 0
+    status = rb.satellite_transfer()
+    print(status)
+    while status[0] > 8:
+        time.sleep(10)
+        status = rb.satellite_transfer()
+        print(retry, status)
+        retry += 1
+    print("\nDONE.")
 
 
 def handle_processes():
@@ -72,47 +104,39 @@ def handle_processes():
     # Each datasource runs in its own process
     ps = []
     
-    create_process(data_qs, shutdown_q, ps, gnss, 'gnss')
-    create_process(data_qs, shutdown_q, ps, tmp117, 'tmp117')
+    create_sensor_process(data_qs, shutdown_q, ps, gnss, 'gnss')
+    create_sensor_process(data_qs, shutdown_q, ps, tmp117, 'tmp117')
     
+    rb = init_rockblock()
+    print("rb model: " + rb.model)
+    
+    sensor_data = {}
+    rb_wait_time = 10
     loop_start_time = time.time()
     try:
-        while time.time() - loop_start_time < 10:
-            time.sleep(3)
+        while True:
+            time.sleep(rb_wait_time)
             for q in data_qs:
                 try:
-                    print(q.get_nowait())
+                    data = q.get_nowait()
+                    sensor_data[data[0]] = data[1]
                 except Empty:
                     print("Empty exception: queue is empty")
+                    
+            packed_msg = packing.pack_all(sensor_data)
+            print(packing.unpack_all(packed_msg))
+            # rockblock_send(rb, packed_msg)
+            
     except KeyboardInterrupt:
         print("Keyboard Interrupt")
+    finally:
+        shutdown_q.put(True)
+        
+        time.sleep(0.1)
+        
+        for p in ps:
+            p.join()
     
-    shutdown_q.put(True)
-    
-    for p in ps:
-        p.join()
-
-    sensor_data = {}
-    for q in data_qs:
-        try:
-            data = q.get_nowait()
-            sensor_data[data[0]] = data[1]
-            pass
-        except Empty:
-            print("Empty exception: queue is empty")
-    
-    shutdown_q.get()
-
-    print()
-    print(sensor_data)
-    
-    gnss_data = sensor_data['gnss']
-    packed_gnss_data = GNSS.pack(gnss_data, GNSS.decimal_place_multiplier)
-    print('packed gnss data: ', packed_gnss_data)
-    print('packed gnss data size: ', struct.calcsize('3i'))
-    unpacked_gnss_data = GNSS.unpack(packed_gnss_data, GNSS.decimal_place_multiplier)
-    print('unpacked gnss data: ', unpacked_gnss_data)
-    print('unpacked gnss data size: ', sys.getsizeof(unpacked_gnss_data))
 
 if __name__ == '__main__':
     
