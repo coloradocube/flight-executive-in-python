@@ -91,12 +91,12 @@ def rockblock_send(data_q, ready_q, shutdown_q):
         rb.data_out = data_q.get()
         print("Talking to satellite...")
         retry = 0
-        #status = rb.satellite_transfer()
+        status = rb.satellite_transfer()
+        
         print(status)
         while status[0] > 8:
             time.sleep(10)
-            #status = rb.satellite_transfer()
-            status[0] = 0
+            status = rb.satellite_transfer()
             print(retry, status)
             retry += 1
         print("\nRockBLOCK message sent.")
@@ -145,8 +145,9 @@ def handle_processes():
                     except Empty:
                         print("Empty exception: queue is empty")
                 
-                print(sensor_data)
+                print("sensor_data: {}".format(sensor_data))
                 packed_msg = packing.pack_all(sensor_data)
+                print("packed_msg: {}:".format(packed_msg))
                 rb_data_q.put(packed_msg)
                 #print(packing.unpack_all(packed_msg))
             

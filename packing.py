@@ -7,7 +7,7 @@ ts_format = '2BH'
 gnss_multiplier = 10**5
 gnss_format = '3i'
 
-tmp117_multiplier = 10**3
+tmp117_multiplier = 10**2
 tmp117_format = 'h'
 
 def pack_timestamp(ts):

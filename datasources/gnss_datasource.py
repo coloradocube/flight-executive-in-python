@@ -11,7 +11,6 @@ class GNSS(DataSource):
     def __init__(self, name, file_path, header, frequency):
         super().__init__(name, file_path, header, frequency)
         ser = serial.Serial('/dev/ttyS0', 9600, timeout=1)
-        #ser = serial.Serial('/dev/serial1', 9600, timeout=0.1)
         self.sio = io.TextIOWrapper(io.BufferedRWPair(ser, ser))
     
     def poll(self):
@@ -24,25 +23,28 @@ class GNSS(DataSource):
             try:
                 line = self.sio.readline()
                 msg = pynmea2.parse(line)
-                lat = None
-                lon = None
-                alt = None
+                lat = 361.0
+                lon = 361.0
+                # Double the lowest point on Earth (Dead Sea)
+                alt = -830.0
                 
                 try:
                     lat = msg.latitude
                     lon = msg.longitude
-                    alt = msg.altitude
+                    if msg.altitude != None:
+                        alt = msg.altitude
                 except AttributeError:
                     pass
                 else:
                     return (lat, lon, alt)
             except serial.SerialException as e:
                 print('Device error: {}'.format(e))
-                #time.sleep(0.1)
                 break
             except pynmea2.ParseError as e:
-                #print('Parse error: {}'.format('could not parse'))
-                pass
+                time.sleep(0.1)
+            except UnicodeDecodeError as e:
+                time.sleep(0.1)
+        
         return (-1.0, -1.0, -1.0)
 
     
