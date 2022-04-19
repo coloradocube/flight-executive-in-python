@@ -88,10 +88,11 @@ def pack_all(sensor_data):
 
 
 def get_combined_format():
-    print(struct.calcsize(ts_format + \
+    combined_format = ts_format + \
                           gnss_format + \
                           tmp117_format \
-                          ))
+    
+    return combined_format
 
 
 def unpack_all(packed):

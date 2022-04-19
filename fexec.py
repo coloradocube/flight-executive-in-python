@@ -78,19 +78,28 @@ def init_rockblock():
     return rb
 
 
-def rockblock_send(rb, packed_data):
+def rockblock_send(data_q, ready_q, shutdown_q):
     
-    rb.data_out = packed_data
-    print("Talking to satellite...")
-    retry = 0
-    status = rb.satellite_transfer()
-    print(status)
-    while status[0] > 8:
-        time.sleep(10)
-        status = rb.satellite_transfer()
-        print(retry, status)
-        retry += 1
-    print("\nDONE.")
+    rb = init_rockblock()
+    print("rb model: " + rb.model)
+    
+    while shutdown_q.empty():
+            
+        # Notify parent ready to send
+        ready_q.put(True)
+        
+        rb.data_out = data_q.get()
+        print("Talking to satellite...")
+        retry = 0
+        #status = rb.satellite_transfer()
+        print(status)
+        while status[0] > 8:
+            time.sleep(10)
+            #status = rb.satellite_transfer()
+            status[0] = 0
+            print(retry, status)
+            retry += 1
+        print("\nRockBLOCK message sent.")
 
 
 def handle_processes():
@@ -107,25 +116,39 @@ def handle_processes():
     create_sensor_process(data_qs, shutdown_q, ps, gnss, 'gnss')
     create_sensor_process(data_qs, shutdown_q, ps, tmp117, 'tmp117')
     
-    rb = init_rockblock()
-    print("rb model: " + rb.model)
+    # For the message to send through the RockBLOCK
+    rb_data_q = mp.Queue()
+    # Updated from the child when the RockBLOCK is ready to send
+    rb_ready_q = mp.Queue()
+    
+    rb_p = mp.Process(target=rockblock_send, \
+                      args=(rb_data_q, rb_ready_q, shutdown_q))
+    rb_p.start()
     
     sensor_data = {}
-    rb_wait_time = 10
-    loop_start_time = time.time()
     try:
         while True:
-            time.sleep(rb_wait_time)
-            for q in data_qs:
-                try:
-                    data = q.get_nowait()
-                    sensor_data[data[0]] = data[1]
-                except Empty:
-                    print("Empty exception: queue is empty")
-                    
-            packed_msg = packing.pack_all(sensor_data)
-            print(packing.unpack_all(packed_msg))
-            # rockblock_send(rb, packed_msg)
+            # Wait between loops to save battery
+            time.sleep(0.1)
+
+            if not rb_ready_q.empty():
+                
+                rb_ready_q.get()
+                
+                # Collect the sensor data
+                for q in data_qs:
+                    try:
+                        data = q.get()
+                        print(data)
+                        # data[0] is the name of the sensor
+                        sensor_data[data[0]] = data[1]
+                    except Empty:
+                        print("Empty exception: queue is empty")
+                
+                print(sensor_data)
+                packed_msg = packing.pack_all(sensor_data)
+                rb_data_q.put(packed_msg)
+                #print(packing.unpack_all(packed_msg))
             
     except KeyboardInterrupt:
         print("Keyboard Interrupt")
@@ -136,6 +159,10 @@ def handle_processes():
         
         for p in ps:
             p.join()
+        
+        rb_p.join()
+        
+        shutdown_q.get()
     
 
 if __name__ == '__main__':
