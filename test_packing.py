@@ -72,6 +72,8 @@ class TestPacking(unittest.TestCase):
         unpacked_tmp117 = packing.unpack_tmp117(packed_tmp117)
         
         self.assertEqual(self.unpacked_tmp117, unpacked_tmp117)
+
+    # TODO test_pack_all(), and other packing methods
     
     
     
